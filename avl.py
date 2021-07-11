@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from functools import cmp_to_key
 import random
+import subprocess
 
 # generates initial set of composite keys and correcsponding values pseudorandomly, given initial setting
 # it writes the initial set into a file with the name initial_set.txt
@@ -12,10 +13,10 @@ import random
 def generate_initial_set():
     num_contracts = 1
     num_attributes = 1
-    num_fields = 100
+    num_fields = 10
     max_number = 256 # upper bound on numbers generated as keys and values
     min_mapping_size = 1 # minimum number of keys in a mapping
-    max_mapping_size = 10 # maximum number of keys in a mapping
+    max_mapping_size = 4 # maximum number of keys in a mapping
     # Assign composite key length to field prefixes
     # 0 means field has a primitive value, 1 - mapping, 2 - mapping of mappings, 3 - mapping of mappings of mapping
     composite_lengths = random.choices([0, 1, 2, 3], weights = [8, 4, 2, 1], k=num_fields)
@@ -57,7 +58,7 @@ def generate_initial_set():
 class AvlNode:
     key: list # potentially composite key
     depth: int # length of path from root of the tree to 
-    path: int # path - sequence of 0 (left) or 1 (right) bits specifying how to get from root
+    path: str # path - sequence of 0 (left) or 1 (right) bits specifying how to get from root
     tree: bool # set to True if this node is root of the tree for the nested data structure
     val: int # primitive value for the node (mutually exclusive with subtree)
     subtree: list # complex value for the node (mutually exclusive with val)
@@ -99,22 +100,62 @@ def build_initial_tree():
         if num_keys > len(prefix_stack[-1]) + 1:
             nested_tree = []
             nested_key = item[:len(prefix_stack[-1]) + 1]
-            tree_stack[-1].append(AvlNode(key=nested_key, depth=0, path=0, tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
+            tree_stack[-1].append(AvlNode(key=nested_key, depth=0, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
             tree_stack.append(nested_tree)
             prefix_stack.append(nested_key)
         # now simply add a new node to the tree which is on top of the tree stack
-        tree_stack[-1].append(AvlNode(key=item[:num_keys], depth=0, path=0, tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
+        tree_stack[-1].append(AvlNode(key=item[:num_keys], depth=0, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
     main_tree = tree_stack[0]
     print_tree("", main_tree)
     # Now balance every sub tree to establish correct depth and path values
+    balance_tree(depth=0, path='x', nodes=main_tree)
+    graph_tree('initial_graph', main_tree)
+    subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
 
-def print_tree(indent, nodes):
+def print_tree(indent: str, nodes: list):
     for node in nodes:
         if node.tree:
             print(f'{indent}{node.key}')
             print_tree(indent+"  ", node.subtree)
         else:
             print(f'{indent}{node.key} {node.val}')
+
+def balance_tree(depth: int, path: str, nodes: list):
+    # Perform balancing purely on the basis of number of element in nodes
+    if len(nodes) == 0:
+        return
+    pivot = len(nodes)//2
+    nodes[pivot].depth = depth
+    nodes[pivot].path = path
+    if nodes[pivot].tree:
+        # nested tree
+        balance_tree(depth=depth, path=path+'x', nodes=nodes[pivot].subtree)
+    balance_tree(depth=depth+1, path=path+'0', nodes=nodes[:pivot])
+    balance_tree(depth=depth+1, path=path+'1', nodes=nodes[pivot+1:])
+
+def flatten_tree(nodes: list, flat: list):
+    for node in nodes:
+        flat.append(node)
+        if node.tree:
+            flatten_tree(node.subtree, flat)
+
+def graph_tree(filename: str, nodes: list):
+    flat = []
+    flatten_tree(nodes, flat)
+
+    with open(filename + ".dot", "w") as f:
+        f.write('strict digraph {\n')
+        f.write('node [shape=record];\n')
+        for node in flat:
+            label = '|'.join([str(k) for k in node.key])
+            f.write(f'{node.path} [label="{label}"];\n')
+            if node.path != 'x':
+                f.write(f'{node.path[:-1]} -> {node.path}')
+                if node.path[-1] != 'x':
+                    f.write(f' [label="{node.path[-1]}"]')
+                f.write(';\n')
+                
+        f.write('}\n')
 
 #generate_initial_set()
 build_initial_tree()
