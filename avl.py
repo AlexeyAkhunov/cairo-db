@@ -97,7 +97,7 @@ def build_initial_tree():
             prefix_stack.pop(-1)
             tree_stack.pop(-1)
         # now check if we need to create nested tree
-        if num_keys > len(prefix_stack[-1]) + 1:
+        while num_keys > len(prefix_stack[-1]) + 1:
             nested_tree = []
             nested_key = item[:len(prefix_stack[-1]) + 1]
             tree_stack[-1].append(AvlNode(key=nested_key, depth=0, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
@@ -157,5 +157,5 @@ def graph_tree(filename: str, nodes: list):
                 
         f.write('}\n')
 
-#generate_initial_set()
+generate_initial_set()
 build_initial_tree()
