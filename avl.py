@@ -20,16 +20,15 @@ def generate_initial_set():
     num_fields = 10
     max_number = 256 # upper bound on numbers generated as keys and values
     min_mapping_size = 1 # minimum number of keys in a mapping
-    max_mapping_size = 4 # maximum number of keys in a mapping
+    max_mapping_size = 6 # maximum number of keys in a mapping
     # Assign composite key length to field prefixes
     # 0 means field has a primitive value, 1 - mapping, 2 - mapping of mappings, 3 - mapping of mappings of mapping
     composite_lengths = random.choices([0, 1, 2, 3], weights = [8, 4, 2, 1], k=num_fields)
-    with open("initial_set.txt", "w") as f, open("initial_meta.txt", "w") as mf:
+    with open("initial_set.txt", "w") as f:
         for contract in range(num_contracts):
             for attribute in range(num_attributes):
                 for field in range(num_fields):
                     comp_length  = composite_lengths[field]
-                    mf.write(f'{contract} {attribute} {field} {comp_length}\n')
                     if comp_length == 0:
                         # Just a primitive value, generate
                         v = random.randrange(0, max_number)
@@ -62,7 +61,7 @@ def generate_initial_set():
 @dataclass
 class AvlNode:
     key: list # potentially composite key
-    depth: int # length of path from root of the tree to the this node
+    height: int # maximum length of paths from the node to any leaves
     nesting: int # level of sub-tree nesting (0 - contract, 1 - attribute, 2 - field, 3 - key of the field)
     path: str # path - sequence of 0 (left) or 1 (right) bits specifying how to get from root
     tree: bool # set to True if this node is root of the tree for the nested data structure
@@ -103,18 +102,18 @@ def build_initial_tree():
             prefix_stack.pop(-1)
             tree_stack.pop(-1)
         # now check if we need to create nested tree
-        while num_keys > len(prefix_stack[-1]) + 1 and len(prefix_stack) <= 3:
+        while num_keys > len(prefix_stack[-1]) + 1:
             nested_tree = []
             nested_key = item[:len(prefix_stack[-1]) + 1]
-            tree_stack[-1].append(AvlNode(key=nested_key[len(prefix_stack[-1]):], depth=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
+            tree_stack[-1].append(AvlNode(key=nested_key[len(prefix_stack[-1]):], height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
             tree_stack.append(nested_tree)
             prefix_stack.append(nested_key)
         # now simply add a new node to the tree which is on top of the tree stack
-        tree_stack[-1].append(AvlNode(key=item[len(prefix_stack[-1]):num_keys], depth=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
+        tree_stack[-1].append(AvlNode(key=item[len(prefix_stack[-1]):num_keys], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
     main_tree = tree_stack[0]
     print_tree("", main_tree)
     # Now balance every sub tree to establish correct depth and path values
-    balance_tree(depth=0, path='N', nodes=main_tree)
+    balance_tree(path='N', nodes=main_tree)
     graph_tree('initial_graph', main_tree)
     subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
 
@@ -126,18 +125,45 @@ def print_tree(indent: str, nodes: list):
         else:
             print(f'{indent}{node.nesting}) {node.key} {node.val}')
 
-def balance_tree(depth: int, path: str, nodes: list):
+# splits tree into two subtrees and invokes itself recursively
+# for those sub-trees
+# the most important "knob" is the choice of the pivot
+# the rule we are using for the pivot is as follows
+# If binary representation of total number of nodes in the tree starts with `10` (second most significant bit is zero),
+# for example, 2, 4, 5, 8, 9, 10, 11, 16, the left subtree is higher than the right subtree, and the size of the left
+# subtree is determined by replacing that `10` combination with `01`. For example, for 2 (10), it will be 1 (01),
+# for 4 (100) => 2 (010), for 5 (101) => 3 (011), for 8 (1000) => 4 (0100), for 9 (1001) => 5 (0101),
+# for 11 (1011) => 7 (0111), for 16 (10000) => 8 (01000). The size of the right subtree can be computed from the
+# size of the tree and size of the left subtree.
+# If binary representation of total number of nodes in the tree starts `11` (second most significant bit is one),
+# for example, 3, 6, 7, 12, 13, 14, 15, the left and the right subtrees are of the equal height. In the case,
+# the size of the right subtree is determined by removing the most significant bit from the size of the tree.
+# For example, for 3 (11), it will be 1 (1), for 6 (110) => 2 (10), for 7 (111) => 3 (11), for 12 (1100) => 4 (100),
+# for 13 (1101) => 5 (101), 14 (1110) => 6 (110), 15 (1111) => 7 (111).
+def balance_tree(path: str, nodes: list):
     # Perform balancing purely on the basis of number of element in nodes
-    if len(nodes) == 0:
+    n = len(nodes)
+    if n == 0:
         return
-    pivot = len(nodes)//2
-    nodes[pivot].depth = depth
+    if n == 1:
+        pivot = 0
+    else:
+        # we will shift the value of reduced to the right until it becomes either 2 (10) or 3 (11)
+        reduced = n
+        fullsize = 0
+        while reduced > 3:
+            reduced >>= 1
+            fullsize = (fullsize << 1) + 1
+        if reduced == 3:
+            pivot = (fullsize << 1) + 1
+        else:
+            pivot = n - 1 - fullsize
     nodes[pivot].path = path
     if nodes[pivot].tree:
         # nested tree
-        balance_tree(depth=depth, path=path+'N', nodes=nodes[pivot].subtree)
-    balance_tree(depth=depth+1, path=path+'L', nodes=nodes[:pivot])
-    balance_tree(depth=depth+1, path=path+'R', nodes=nodes[pivot+1:])
+        balance_tree(path=path+'N', nodes=nodes[pivot].subtree)
+    balance_tree(path=path+'L', nodes=nodes[:pivot])
+    balance_tree(path=path+'R', nodes=nodes[pivot+1:])
 
 def flatten_tree(nodes: list, flat: list):
     for node in nodes:
@@ -149,7 +175,7 @@ def graph_tree(filename: str, nodes: list):
     flat = []
     flatten_tree(nodes, flat)
 
-    colors = ['#FDF3D0', '#DCE8FA', '#D9E7D6', '#F1CFCD']
+    colors = ['#FDF3D0', '#DCE8FA', '#D9E7D6', '#F1CFCD', 'white', 'white', 'white', 'white']
     with open(filename + ".dot", "w") as f:
         f.write('strict digraph {\n')
         f.write('node [shape=record];\n')
@@ -164,5 +190,5 @@ def graph_tree(filename: str, nodes: list):
                 
         f.write('}\n')
 
-#generate_initial_set()
+generate_initial_set()
 build_initial_tree()
