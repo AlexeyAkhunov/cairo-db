@@ -1,9 +1,5 @@
-# Operations with AVL trees
+# Operations with WBT trees
 
-from dataclasses import dataclass
-from functools import cmp_to_key
-import random
-import subprocess
 
 # generates initial set of composite keys and correcsponding values pseudorandomly, given initial setting
 # it writes the initial set into a file with the name initial_set.txt
@@ -15,6 +11,7 @@ import subprocess
 # {contract} {attribute} {field} {composite key length}
 # where {composite key length} is 0 for primitive fields, 1, for mappings, 2 - mappings of mappings, and so on.
 def generate_initial_set():
+    import random
     num_contracts = 1
     num_attributes = 1
     num_fields = 10
@@ -58,8 +55,9 @@ def generate_initial_set():
                                 key_samples[i] = random.sample(range(max_number), k=k)
                                 i-=1
 
+from dataclasses import dataclass
 @dataclass
-class AvlNode:
+class WbtNode:
     key: list # potentially composite key
     height: int # maximum length of paths from the node to any leaves
     nesting: int # level of sub-tree nesting (0 - contract, 1 - attribute, 2 - field, 3 - key of the field)
@@ -68,8 +66,9 @@ class AvlNode:
     val: int # primitive value for the node (mutually exclusive with subtree)
     subtree: list # complex value for the node (mutually exclusive with val)
 
-# reads initial set from the file initial_set.txt and build initial avl tree ensuring it is balanced
-def build_initial_tree():
+# reads initial set from the file initial_set.txt and build initial Wbt tree ensuring it is balanced
+def build_initial_tree() -> list[WbtNode]:
+    from functools import cmp_to_key
     # read initial set and sort it
     with open("initial_set.txt", "r") as f:
         lines = f.readlines()
@@ -105,18 +104,15 @@ def build_initial_tree():
         while num_keys > len(prefix_stack[-1]) + 1:
             nested_tree = []
             nested_key = item[:len(prefix_stack[-1]) + 1]
-            tree_stack[-1].append(AvlNode(key=nested_key[len(prefix_stack[-1]):], height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
+            tree_stack[-1].append(WbtNode(key=nested_key[len(prefix_stack[-1]):], height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
             tree_stack.append(nested_tree)
             prefix_stack.append(nested_key)
         # now simply add a new node to the tree which is on top of the tree stack
-        tree_stack[-1].append(AvlNode(key=item[len(prefix_stack[-1]):num_keys], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
+        tree_stack[-1].append(WbtNode(key=item[len(prefix_stack[-1]):num_keys], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
     main_tree = tree_stack[0]
-    print_tree("", main_tree)
-    # Now balance every sub tree to establish correct depth and path values
-    balance_tree(path='N', nodes=main_tree)
-    graph_tree('initial_graph', main_tree)
-    subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
+    return main_tree
 
+# outputs tree as a simple list of nodes
 def print_tree(indent: str, nodes: list):
     for node in nodes:
         if node.tree:
@@ -190,5 +186,23 @@ def graph_tree(filename: str, nodes: list):
                 
         f.write('}\n')
 
-generate_initial_set()
-build_initial_tree()
+def initial_hash():
+    from starkware.crypto.signature.fast_pedersen_hash import pedersen_hash
+    x = 2
+    y = 2
+    z = pedersen_hash(x, y)
+    print(z)
+
+#generate_initial_set()
+tree = build_initial_tree()
+
+print_tree("", tree)
+
+# Now balance every sub tree to establish correct depth and path values
+balance_tree(path='N', nodes=tree)
+
+graph_tree('initial_graph', tree)
+import subprocess
+subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
+
+initial_hash()
