@@ -58,7 +58,7 @@ def generate_initial_set():
 from dataclasses import dataclass
 @dataclass
 class WbtNode:
-    key: list # potentially composite key
+    key: int # node key
     height: int # maximum length of paths from the node to any leaves
     nesting: int # level of sub-tree nesting (0 - contract, 1 - attribute, 2 - field, 3 - key of the field)
     path: str # path - sequence of 0 (left) or 1 (right) bits specifying how to get from root
@@ -104,22 +104,22 @@ def build_initial_tree() -> list[WbtNode]:
         while num_keys > len(prefix_stack[-1]) + 1:
             nested_tree = []
             nested_key = item[:len(prefix_stack[-1]) + 1]
-            tree_stack[-1].append(WbtNode(key=nested_key[len(prefix_stack[-1]):], height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
+            tree_stack[-1].append(WbtNode(key=nested_key[len(prefix_stack[-1])], height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
             tree_stack.append(nested_tree)
             prefix_stack.append(nested_key)
         # now simply add a new node to the tree which is on top of the tree stack
-        tree_stack[-1].append(WbtNode(key=item[len(prefix_stack[-1]):num_keys], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
+        tree_stack[-1].append(WbtNode(key=item[len(prefix_stack[-1])], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
     main_tree = tree_stack[0]
     return main_tree
 
 # outputs tree as a simple list of nodes
 def print_tree(indent: str, nodes: list):
     for node in nodes:
+        indent = " " * node.nesting
         if node.tree:
-            print(f'{indent}{node.nesting}) {node.key}')
-            print_tree(indent+"  ", node.subtree)
+            print(f'{indent}{node.nesting}) {node.key} {node.path}')
         else:
-            print(f'{indent}{node.nesting}) {node.key} {node.val}')
+            print(f'{indent}{node.nesting}) {node.key} {node.val} {node.path}')
 
 # splits tree into two subtrees and invokes itself recursively
 # for those sub-trees
@@ -167,17 +167,13 @@ def flatten_tree(nodes: list, flat: list):
         if node.tree:
             flatten_tree(node.subtree, flat)
 
-def graph_tree(filename: str, nodes: list):
-    flat = []
-    flatten_tree(nodes, flat)
-
+def graph_tree(filename: str, flat: list):
     colors = ['#FDF3D0', '#DCE8FA', '#D9E7D6', '#F1CFCD', 'white', 'white', 'white', 'white']
     with open(filename + ".dot", "w") as f:
         f.write('strict digraph {\n')
         f.write('node [shape=record];\n')
         for node in flat:
-            label = '|'.join([str(k) for k in node.key])
-            f.write(f'{node.path} [label="{label}" style=filled fillcolor="{colors[node.nesting]}"];\n')
+            f.write(f'{node.path} [label="{node.key}" style=filled fillcolor="{colors[node.nesting]}"];\n')
             if node.path != 'N':
                 f.write(f'{node.path[:-1]} -> {node.path}')
                 if node.path[-1] != 'N':
@@ -186,23 +182,48 @@ def graph_tree(filename: str, nodes: list):
                 
         f.write('}\n')
 
-def initial_hash():
+def initial_hash(nodes: list):
+    empty, root = hash_subtree('N', nodes)
+    assert len(empty) == 0, f'unused tree nodes after computing root hash: {len(empty)}'
+    return root
+
+def hash_subtree(path: str, nodes: list) -> (list, int):
     from starkware.crypto.signature.fast_pedersen_hash import pedersen_hash
-    x = 2
-    y = 2
-    z = pedersen_hash(x, y)
-    print(z)
+    print(f'hash_subtree for {path}, nodes {len(nodes)}')
+    if len(nodes) == 0:
+        return nodes, 0
+    n = nodes[0]
+    print(f'hash_subtree for {path}, n.path {n.path}, tree {n.tree}')
+    if path < n.path:
+        return nodes, 0
+    assert path == n.path, f'incorrect ordering of nodes when computing root hash: {path} > {n.path}'
+    nodes, left_root = hash_subtree(path + 'L', nodes[1:])
+    l_hash = pedersen_hash(left_root, n.key)
+    if n.tree:
+        nodes, nested_root = hash_subtree(path + 'N', nodes[1:])
+    nodes, right_root = hash_subtree(path + 'R', nodes[1:])
+    if n.tree:
+        r_hash = pedersen_hash(nested_root, right_root)
+    else:
+        r_hash = pedersen_hash(n.val, right_root)
+    root = pedersen_hash(l_hash, r_hash)
+    print(f'hash({path})={root}')
+    return nodes, root
 
 #generate_initial_set()
 tree = build_initial_tree()
 
-print_tree("", tree)
-
 # Now balance every sub tree to establish correct depth and path values
 balance_tree(path='N', nodes=tree)
 
-graph_tree('initial_graph', tree)
+flat = []
+flatten_tree(tree, flat)
+flat.sort(key=lambda n: n.path)
+print_tree("", flat)
+
+graph_tree('initial_graph', flat)
 import subprocess
 subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
 
-initial_hash()
+root = initial_hash(nodes=flat)
+print(f'initial root hash: {root}')
