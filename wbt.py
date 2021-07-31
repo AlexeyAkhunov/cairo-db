@@ -183,32 +183,37 @@ def graph_tree(filename: str, flat: list):
         f.write('}\n')
 
 def initial_hash(nodes: list):
-    empty, root = hash_subtree('N', nodes)
+    with open("initial_hashes.txt", "w") as f:
+        empty, root = hash_subtree('N', nodes, f)
     assert len(empty) == 0, f'unused tree nodes after computing root hash: {len(empty)}'
     return root
 
-def hash_subtree(path: str, nodes: list) -> (list, int):
+def hash_subtree(path: str, nodes: list, f) -> (list, int):
     from starkware.crypto.signature.fast_pedersen_hash import pedersen_hash
-    print(f'hash_subtree for {path}, nodes {len(nodes)}')
+    #print(f'hash_subtree for {path}, nodes {len(nodes)}')
     if len(nodes) == 0:
         return nodes, 0
     n = nodes[0]
-    print(f'hash_subtree for {path}, n.path {n.path}, tree {n.tree}')
+    #print(f'hash_subtree for {path}, n.path {n.path}, tree {n.tree}')
     if path < n.path:
         return nodes, 0
     assert path == n.path, f'incorrect ordering of nodes when computing root hash: {path} > {n.path}'
-    nodes, left_root = hash_subtree(path + 'L', nodes[1:])
+    nodes = nodes[1:]
+    nodes, left_root = hash_subtree(path + 'L', nodes, f)
     l_hash = pedersen_hash(left_root, n.key)
     if n.tree:
-        nodes, nested_root = hash_subtree(path + 'N', nodes[1:])
-    nodes, right_root = hash_subtree(path + 'R', nodes[1:])
+        nodes, nested_root = hash_subtree(path + 'N', nodes, f)
+    nodes, right_root = hash_subtree(path + 'R', nodes, f)
     if n.tree:
         r_hash = pedersen_hash(nested_root, right_root)
     else:
         r_hash = pedersen_hash(n.val, right_root)
     root = pedersen_hash(l_hash, r_hash)
-    print(f'hash({path})={root}')
+    f.write(f'{path} {root}\n')
     return nodes, root
+
+def select_reads():
+    return 0
 
 #generate_initial_set()
 tree = build_initial_tree()
