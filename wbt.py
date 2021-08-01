@@ -59,6 +59,7 @@ from dataclasses import dataclass
 @dataclass
 class WbtNode:
     key: int # node key
+    composite: list[int] # composite key of the node
     height: int # maximum length of paths from the node to any leaves
     nesting: int # level of sub-tree nesting (0 - contract, 1 - attribute, 2 - field, 3 - key of the field)
     path: str # path - sequence of 0 (left) or 1 (right) bits specifying how to get from root
@@ -104,11 +105,11 @@ def build_initial_tree() -> list[WbtNode]:
         while num_keys > len(prefix_stack[-1]) + 1:
             nested_tree = []
             nested_key = item[:len(prefix_stack[-1]) + 1]
-            tree_stack[-1].append(WbtNode(key=nested_key[len(prefix_stack[-1])], height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
+            tree_stack[-1].append(WbtNode(key=nested_key[len(prefix_stack[-1])], composite=nested_key, height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
             tree_stack.append(nested_tree)
             prefix_stack.append(nested_key)
         # now simply add a new node to the tree which is on top of the tree stack
-        tree_stack[-1].append(WbtNode(key=item[len(prefix_stack[-1])], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
+        tree_stack[-1].append(WbtNode(key=item[len(prefix_stack[-1])], composite=item[:-1], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
     main_tree = tree_stack[0]
     return main_tree
 
@@ -117,9 +118,9 @@ def print_tree(indent: str, nodes: list):
     for node in nodes:
         indent = " " * node.nesting
         if node.tree:
-            print(f'{indent}{node.nesting}) {node.key} {node.path}')
+            print(f'{indent}{node.nesting}) {node.key} {node.composite} {node.path}')
         else:
-            print(f'{indent}{node.nesting}) {node.key} {node.val} {node.path}')
+            print(f'{indent}{node.nesting}) {node.key} {node.composite} {node.val} {node.path}')
 
 # splits tree into two subtrees and invokes itself recursively
 # for those sub-trees
@@ -154,10 +155,12 @@ def balance_tree(path: str, nodes: list):
             pivot = (fullsize << 1) + 1
         else:
             pivot = n - 1 - fullsize
-    nodes[pivot].path = path
     if nodes[pivot].tree:
         # nested tree
+        nodes[pivot].path = path + 'M'
         balance_tree(path=path+'N', nodes=nodes[pivot].subtree)
+    else:
+        nodes[pivot].path = path
     balance_tree(path=path+'L', nodes=nodes[:pivot])
     balance_tree(path=path+'R', nodes=nodes[pivot+1:])
 
@@ -167,24 +170,41 @@ def flatten_tree(nodes: list, flat: list):
         if node.tree:
             flatten_tree(node.subtree, flat)
 
+# generates graphical representation of the tree in the graphviz dot format
+# input is the tree in the flattened format. Edges between the nodes are derived from the nodes' paths
+# therefore the structure is not required anymore
 def graph_tree(filename: str, flat: list):
-    colors = ['#FDF3D0', '#DCE8FA', '#D9E7D6', '#F1CFCD', 'white', 'white', 'white', 'white']
+    colors = ['#FDF3D0', '#DCE8FA', '#D9E7D6', '#F1CFCD', '#F5F5F5', '#E1D5E7', '#FFE6CC', 'white']
     with open(filename + ".dot", "w") as f:
         f.write('strict digraph {\n')
         f.write('node [shape=record];\n')
+        paths = dict([(node.path, True) for node in flat])
         for node in flat:
             f.write(f'{node.path} [label="{node.key}" style=filled fillcolor="{colors[node.nesting]}"];\n')
-            if node.path != 'N':
-                f.write(f'{node.path[:-1]} -> {node.path}')
-                if node.path[-1] != 'N':
-                    f.write(f' [label="{node.path[-1]}"]')
+            prev = node.path
+            if prev.endswith('M'):
+                prev = prev[:-1]
+            if prev.endswith('L') or prev.endswith('R'):
+                prev = prev[:-1]
+            #if prev.endswith('N'):
+            #    prev = prev[:-1] + 'M'
+            if prev != '' and not prev in paths:
+                prev += 'M'
+                assert prev in paths, f'path {prev} not found'
+            if prev != '':
+                f.write(f'{prev} -> {node.path}')
+                # Show edge direction only if it is L (left) or R (right)
+                dir = node.path[-1]
+                if dir == 'L' or dir == 'R':
+                    f.write(f' [label="{dir}"]')
                 f.write(';\n')
-                
         f.write('}\n')
 
-def initial_hash(nodes: list):
+# computes initial merkle hashes and writes resulting tree with intermediate
+# hashes into the file initial_hashes.txt
+def initial_hash(flat: list):
     with open("initial_hashes.txt", "w") as f:
-        empty, root = hash_subtree('N', nodes, f)
+        empty, root = hash_subtree('N', flat, f)
     assert len(empty) == 0, f'unused tree nodes after computing root hash: {len(empty)}'
     return root
 
@@ -209,17 +229,36 @@ def hash_subtree(path: str, nodes: list, f) -> (list, int):
     else:
         r_hash = pedersen_hash(n.val, right_root)
     root = pedersen_hash(l_hash, r_hash)
-    f.write(f'{path} {root}\n')
+    f.write(f'{path} {root} {n.composite}')
+    if not n.tree:
+        f.write(f' {n.val}')
+    f.write('\n')
     return nodes, root
 
-def select_reads():
-    return 0
+# randomly selects some nodes from the tree, and also generates some missing nodes
+def select_reads(nodes: list, exist_amount: int, miss_amount: int) -> list:
+    import random
+    exist_idx = random.sample(range(len(nodes)), k=exist_amount)
+    result = [nodes[idx].composite for idx in exist_idx]
+    dedup = {}
+    for r in result:
+        dedup[str(r)] = True
+    miss_idx = random.sample(range(len(nodes)), k=miss_amount)
+    # some of the missing nodes might accidentally be present, but it is ok
+    for idx in miss_idx:
+        key = nodes[idx].composite.copy()
+        key[-1] += 1
+        key_str = str(key)
+        if not key_str in dedup:
+            dedup[key_str] = True
+            result.append(key)
+    return result
 
 #generate_initial_set()
 tree = build_initial_tree()
 
 # Now balance every sub tree to establish correct depth and path values
-balance_tree(path='N', nodes=tree)
+balance_tree(path='', nodes=tree)
 
 flat = []
 flatten_tree(tree, flat)
@@ -230,5 +269,8 @@ graph_tree('initial_graph', flat)
 import subprocess
 subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
 
-root = initial_hash(nodes=flat)
+root = initial_hash(flat=flat)
 print(f'initial root hash: {root}')
+
+reads = select_reads(nodes=flat, exist_amount=4, miss_amount=1)
+print(f'selected reads: {reads}')
