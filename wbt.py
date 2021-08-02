@@ -182,19 +182,20 @@ def graph_tree(filename: str, flat: list):
         for node in flat:
             f.write(f'{node.path} [label="{node.key}" style=filled fillcolor="{colors[node.nesting]}"];\n')
             prev = node.path
+            dir = ''
             if prev.endswith('M'):
                 prev = prev[:-1]
             if prev.endswith('L') or prev.endswith('R'):
+                dir = prev[-1]
                 prev = prev[:-1]
-            #if prev.endswith('N'):
-            #    prev = prev[:-1] + 'M'
-            if prev != '' and not prev in paths:
-                prev += 'M'
-                assert prev in paths, f'path {prev} not found'
+                if prev != '' and not prev in paths:
+                    prev += 'M'
+                    assert prev in paths, f'path {prev} not found'
+            elif prev.endswith('N'):
+                prev = prev[:-1] + 'M'
             if prev != '':
                 f.write(f'{prev} -> {node.path}')
                 # Show edge direction only if it is L (left) or R (right)
-                dir = node.path[-1]
                 if dir == 'L' or dir == 'R':
                     f.write(f' [label="{dir}"]')
                 f.write(';\n')
@@ -204,21 +205,25 @@ def graph_tree(filename: str, flat: list):
 # hashes into the file initial_hashes.txt
 def initial_hash(flat: list):
     with open("initial_hashes.txt", "w") as f:
-        empty, root = hash_subtree('N', flat, f)
+        empty, root = hash_subtree('', flat, f)
     assert len(empty) == 0, f'unused tree nodes after computing root hash: {len(empty)}'
     return root
 
 def hash_subtree(path: str, nodes: list, f) -> (list, int):
     from starkware.crypto.signature.fast_pedersen_hash import pedersen_hash
-    #print(f'hash_subtree for {path}, nodes {len(nodes)}')
+    print(f'hash_subtree for {path}, nodes {len(nodes)}')
     if len(nodes) == 0:
         return nodes, 0
     n = nodes[0]
-    #print(f'hash_subtree for {path}, n.path {n.path}, tree {n.tree}')
-    if path < n.path:
+    node_path = n.path
+    if node_path.endswith('M'):
+        node_path = node_path[:-1]
+    print(f'hash_subtree for {path}, n.path {n.path}, nodepath {node_path}, tree {n.tree}')
+    if path < node_path and not node_path.endswith(path):
         return nodes, 0
-    assert path == n.path, f'incorrect ordering of nodes when computing root hash: {path} > {n.path}'
-    nodes = nodes[1:]
+    assert path <= node_path, f'incorrect ordering of nodes when computing root hash: {path} > {node_path}'
+    if path == node_path:
+        nodes = nodes[1:]
     nodes, left_root = hash_subtree(path + 'L', nodes, f)
     l_hash = pedersen_hash(left_root, n.key)
     if n.tree:
