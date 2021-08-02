@@ -211,12 +211,12 @@ def initial_hash(flat: list):
 
 def hash_subtree(path: str, nodes: list, f) -> (list, int):
     from starkware.crypto.signature.fast_pedersen_hash import pedersen_hash
-    print(f'hash_subtree for {path}, nodes {len(nodes)}')
+    #print(f'hash_subtree for {path}, nodes {len(nodes)}')
     if len(nodes) == 0:
         return nodes, 0
     n = nodes[0]
     node_path = n.path
-    print(f'hash_subtree for {path}, nodepath {node_path}')
+    #print(f'hash_subtree for {path}, nodepath {node_path}')
     if path < node_path and (not node_path.startswith(path)):
         return nodes, 0
     assert path <= node_path, f'incorrect ordering of nodes when computing root hash: {path} > {node_path}'
@@ -225,7 +225,7 @@ def hash_subtree(path: str, nodes: list, f) -> (list, int):
     nodes, left_root = hash_subtree(path + 'L', nodes, f)
     nested = False
     if len(nodes) > 0 and nodes[0].path.endswith('M') and path==nodes[0].path[:-1]:
-        print(f'hash_subtree recurse N for {path}, nodepath {nodes[0].path}')
+        #print(f'hash_subtree recurse N for {path}, nodepath {nodes[0].path}')
         n = nodes[0]
         nodes, nested_root = hash_subtree(path + 'N', nodes[1:], f)
         nested = True
@@ -236,11 +236,19 @@ def hash_subtree(path: str, nodes: list, f) -> (list, int):
     else:
         r_hash = pedersen_hash(n.val, right_root)
     root = pedersen_hash(l_hash, r_hash)
-    f.write(f'{path} {root} {n.composite}')
+    f.write(f'"{path}" {root} {n.composite}')
     if not n.tree:
         f.write(f' {n.val}')
     f.write('\n')
     return nodes, root
+
+# Reads tree from the file produced by the initial_hash function
+def read_from_file(filename: str) -> list:
+    with open(filename, "r") as f:
+        lines = f.readlines()
+    items = [[s for s in line.split()] for line in lines]
+    print(items)
+    return []
 
 # randomly selects some nodes from the tree, and also generates some missing nodes
 def select_reads(nodes: list, exist_amount: int, miss_amount: int) -> list:
@@ -278,6 +286,8 @@ subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png']
 
 root = initial_hash(flat=flat)
 print(f'initial root hash: {root}')
+
+read_from_file('initial_hashes.txt')
 
 reads = select_reads(nodes=flat, exist_amount=4, miss_amount=1)
 print(f'selected reads: {reads}')
