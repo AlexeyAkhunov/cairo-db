@@ -216,20 +216,22 @@ def hash_subtree(path: str, nodes: list, f) -> (list, int):
         return nodes, 0
     n = nodes[0]
     node_path = n.path
-    if node_path.endswith('M'):
-        node_path = node_path[:-1]
-    print(f'hash_subtree for {path}, n.path {n.path}, nodepath {node_path}, tree {n.tree}')
-    if path < node_path and not node_path.endswith(path):
+    print(f'hash_subtree for {path}, nodepath {node_path}')
+    if path < node_path and (not node_path.startswith(path)):
         return nodes, 0
     assert path <= node_path, f'incorrect ordering of nodes when computing root hash: {path} > {node_path}'
     if path == node_path:
         nodes = nodes[1:]
     nodes, left_root = hash_subtree(path + 'L', nodes, f)
+    nested = False
+    if len(nodes) > 0 and nodes[0].path.endswith('M') and path==nodes[0].path[:-1]:
+        print(f'hash_subtree recurse N for {path}, nodepath {nodes[0].path}')
+        n = nodes[0]
+        nodes, nested_root = hash_subtree(path + 'N', nodes[1:], f)
+        nested = True
     l_hash = pedersen_hash(left_root, n.key)
-    if n.tree:
-        nodes, nested_root = hash_subtree(path + 'N', nodes, f)
     nodes, right_root = hash_subtree(path + 'R', nodes, f)
-    if n.tree:
+    if nested:
         r_hash = pedersen_hash(nested_root, right_root)
     else:
         r_hash = pedersen_hash(n.val, right_root)
