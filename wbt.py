@@ -249,8 +249,19 @@ def read_from_file(filename: str) -> list:
     with open(filename, "r") as f:
         lines = f.readlines()
     items = [[s for s in line.split()] for line in lines]
-    print(items)
-    return []
+    result = []
+    for item_line in items:
+        path = item_line[0]
+        hash = int(item_line[1])
+        if path.endswith('M'):
+            # not expecting value at the end
+            composite = [int(item) for item in item_line[2:]]
+        else:
+            composite = [int(item) for item in item_line[2:-1]]
+            val = int(item_line[-1])
+        key = composite[-1]
+        result.append(WbtNode(key=key, composite=composite, height=0, nesting=len(composite)-1, path=path, tree=False, subtree=None, val=val))
+    return result
 
 # randomly selects some nodes from the tree, and also generates some missing nodes
 def select_reads(nodes: list, exist_amount: int, miss_amount: int) -> list:
@@ -271,13 +282,6 @@ def select_reads(nodes: list, exist_amount: int, miss_amount: int) -> list:
             result.append(key)
     return result
 
-def hash_check():
-    from starkware.crypto.signature.fast_pedersen_hash import pedersen_hash
-    x = 1
-    y = 0
-    z = pedersen_hash(x, y)
-    print(z)
-
 #generate_initial_set()
 tree = build_initial_tree()
 
@@ -289,14 +293,13 @@ flatten_tree(tree, flat)
 flat.sort(key=lambda n: n.path)
 print_tree("", flat)
 
-graph_tree('initial_graph', flat)
-import subprocess
-subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
-
 root = initial_hash(flat=flat)
 print(f'initial root hash: {root}')
 
-read_from_file('initial_hashes.txt')
+flat = read_from_file('initial_hashes.txt')
+graph_tree('initial_graph', flat)
+import subprocess
+subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
 
 reads = select_reads(nodes=flat, exist_amount=4, miss_amount=1)
 print(f'selected reads: {reads}')
