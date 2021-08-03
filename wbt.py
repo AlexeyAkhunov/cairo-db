@@ -239,7 +239,7 @@ def hash_subtree(path: str, nodes: list, f) -> (list, int):
         r_hash = pedersen_hash(n.val, right_root)
     root = pedersen_hash(l_hash, r_hash)
     if nested:
-        f.write(f'{path}M {nested_root} {" ".join([str(k) for k in nn.composite])}\n')
+        f.write(f'{path}M {root} {" ".join([str(k) for k in nn.composite])}\n')
     else:
         f.write(f'{path} {root} {" ".join([str(k) for k in n.composite])} {n.val}\n')
     return nodes, root
@@ -271,6 +271,13 @@ def select_reads(nodes: list, exist_amount: int, miss_amount: int) -> list:
             result.append(key)
     return result
 
+def hash_check():
+    from starkware.crypto.signature.fast_pedersen_hash import pedersen_hash
+    x = 1
+    y = 0
+    z = pedersen_hash(x, y)
+    print(z)
+
 #generate_initial_set()
 tree = build_initial_tree()
 
@@ -293,3 +300,4 @@ read_from_file('initial_hashes.txt')
 
 reads = select_reads(nodes=flat, exist_amount=4, miss_amount=1)
 print(f'selected reads: {reads}')
+
