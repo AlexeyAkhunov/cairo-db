@@ -211,7 +211,7 @@ def initial_hash(flat: list):
 
 def hash_subtree(path: str, nodes: list, f) -> (list, int):
     from starkware.crypto.signature.fast_pedersen_hash import pedersen_hash
-    #print(f'hash_subtree for {path}, nodes {len(nodes)}')
+    print(f'hash_subtree for {path}, nodes {len(nodes)}')
     if len(nodes) == 0:
         return nodes, 0
     n = nodes[0]
@@ -226,20 +226,22 @@ def hash_subtree(path: str, nodes: list, f) -> (list, int):
     nested = False
     if len(nodes) > 0 and nodes[0].path.endswith('M') and path==nodes[0].path[:-1]:
         #print(f'hash_subtree recurse N for {path}, nodepath {nodes[0].path}')
-        n = nodes[0]
+        nn = nodes[0]
         nodes, nested_root = hash_subtree(path + 'N', nodes[1:], f)
         nested = True
-    l_hash = pedersen_hash(left_root, n.key)
+        l_hash = pedersen_hash(left_root, nn.key)
+    else:
+        l_hash = pedersen_hash(left_root, n.key)
     nodes, right_root = hash_subtree(path + 'R', nodes, f)
     if nested:
         r_hash = pedersen_hash(nested_root, right_root)
     else:
         r_hash = pedersen_hash(n.val, right_root)
     root = pedersen_hash(l_hash, r_hash)
-    f.write(f'"{path}" {root} {n.composite}')
-    if not n.tree:
-        f.write(f' {n.val}')
-    f.write('\n')
+    if nested:
+        f.write(f'{path}M {nested_root} {" ".join([str(k) for k in nn.composite])}\n')
+    else:
+        f.write(f'{path} {root} {" ".join([str(k) for k in n.composite])} {n.val}\n')
     return nodes, root
 
 # Reads tree from the file produced by the initial_hash function
