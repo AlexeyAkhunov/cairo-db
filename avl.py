@@ -1,4 +1,4 @@
-# Operations with WBT trees
+# Operations with AVL trees
 
 
 # generates initial set of composite keys and correcsponding values pseudorandomly, given initial setting
@@ -57,7 +57,7 @@ def generate_initial_set():
 
 from dataclasses import dataclass
 @dataclass
-class WbtNode:
+class AvlNode:
     key: int # node key
     composite: list[int] # composite key of the node
     height: int # maximum length of paths from the node to any leaves
@@ -67,8 +67,8 @@ class WbtNode:
     val: int # primitive value for the node (mutually exclusive with subtree)
     subtree: list # complex value for the node (mutually exclusive with val)
 
-# reads initial set from the file initial_set.txt and build initial Wbt tree ensuring it is balanced
-def build_initial_tree() -> list[WbtNode]:
+# reads initial set from the file initial_set.txt and build initial Avl tree ensuring it is balanced
+def build_initial_tree() -> list[AvlNode]:
     from functools import cmp_to_key
     # read initial set and sort it
     with open("initial_set.txt", "r") as f:
@@ -105,11 +105,11 @@ def build_initial_tree() -> list[WbtNode]:
         while num_keys > len(prefix_stack[-1]) + 1:
             nested_tree = []
             nested_key = item[:len(prefix_stack[-1]) + 1]
-            tree_stack[-1].append(WbtNode(key=nested_key[len(prefix_stack[-1])], composite=nested_key, height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
+            tree_stack[-1].append(AvlNode(key=nested_key[len(prefix_stack[-1])], composite=nested_key, height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
             tree_stack.append(nested_tree)
             prefix_stack.append(nested_key)
         # now simply add a new node to the tree which is on top of the tree stack
-        tree_stack[-1].append(WbtNode(key=item[len(prefix_stack[-1])], composite=item[:-1], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
+        tree_stack[-1].append(AvlNode(key=item[len(prefix_stack[-1])], composite=item[:-1], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
     main_tree = tree_stack[0]
     return main_tree
 
@@ -260,7 +260,7 @@ def read_from_file(filename: str) -> list:
             composite = [int(item) for item in item_line[2:-1]]
             val = int(item_line[-1])
         key = composite[-1]
-        result.append(WbtNode(key=key, composite=composite, height=0, nesting=len(composite)-1, path=path, tree=False, subtree=None, val=val))
+        result.append(AvlNode(key=key, composite=composite, height=0, nesting=len(composite)-1, path=path, tree=False, subtree=None, val=val))
     return result
 
 # randomly selects some nodes from the tree, and also generates some missing nodes
