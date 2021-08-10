@@ -179,7 +179,7 @@ def graph_tree(filename: str, flat: list):
     with open(filename + ".dot", "w") as f:
         f.write('strict digraph {\n')
         f.write('node [shape=record];\n')
-        f.write('root [label="|{|<N>N}|"]\n')
+        f.write('root [label="N"]\n')
         paths = dict([(node.path, True) for node in flat])
         for node in flat:
             # Find outgoing edges to understand how to display the node
@@ -216,7 +216,7 @@ def graph_tree(filename: str, flat: list):
                 if prev.endswith('N'):
                     prev = prev[:-1] + 'M'
             if prev == '':
-                f.write(f'root:N -> {node.path}:C;\n')
+                f.write(f'root -> {node.path}:C;\n')
             else:
                 f.write(f'{prev}:{dir} -> {node.path}:C;\n')
         f.write('}\n')
