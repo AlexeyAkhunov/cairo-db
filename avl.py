@@ -66,6 +66,7 @@ class AvlNode:
     tree: bool # set to True if this node is root of the tree for the nested data structure
     val: int # primitive value for the node (mutually exclusive with subtree)
     subtree: list # complex value for the node (mutually exclusive with val)
+    root: int # root hash of the subtree that is rooted at this node
 
 # reads initial set from the file initial_set.txt and build initial Avl tree ensuring it is balanced
 def build_initial_tree() -> list[AvlNode]:
@@ -105,11 +106,11 @@ def build_initial_tree() -> list[AvlNode]:
         while num_keys > len(prefix_stack[-1]) + 1:
             nested_tree = []
             nested_key = item[:len(prefix_stack[-1]) + 1]
-            tree_stack[-1].append(AvlNode(key=nested_key[len(prefix_stack[-1])], composite=nested_key, height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0)) # depth and path is determined during balancing
+            tree_stack[-1].append(AvlNode(key=nested_key[len(prefix_stack[-1])], composite=nested_key, height=0, nesting=len(prefix_stack)-1, path='', tree=True, subtree=nested_tree, val=0, root=0)) # depth and path is determined during balancing
             tree_stack.append(nested_tree)
             prefix_stack.append(nested_key)
         # now simply add a new node to the tree which is on top of the tree stack
-        tree_stack[-1].append(AvlNode(key=item[len(prefix_stack[-1])], composite=item[:-1], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1])) # depth and path is determined during balancing
+        tree_stack[-1].append(AvlNode(key=item[len(prefix_stack[-1])], composite=item[:-1], height=0, nesting=len(prefix_stack)-1, path='', tree=False, subtree=None, val=item[-1], root=0)) # depth and path is determined during balancing
     main_tree = tree_stack[0]
     return main_tree
 
@@ -178,9 +179,28 @@ def graph_tree(filename: str, flat: list):
     with open(filename + ".dot", "w") as f:
         f.write('strict digraph {\n')
         f.write('node [shape=record];\n')
+        f.write('root [label="|{|<N>N}|"]\n')
         paths = dict([(node.path, True) for node in flat])
         for node in flat:
-            f.write(f'{node.path} [label="{node.key}" style=filled fillcolor="{colors[node.nesting]}"];\n')
+            # Find outgoing edges to understand how to display the node
+            next_prefix = node.path
+            left = ''
+            right = ''
+            nest = ''
+            if next_prefix.endswith('M'):
+                next_prefix = next_prefix[:-1]
+                nest = '<N>N'
+            else:
+                nest = f'{node.val}' # Display node value instead of letter N
+            if (next_prefix + 'L') in paths:
+                left = '<L>L'
+            if (next_prefix + 'LM') in paths:
+                left = '<L>L'
+            if (next_prefix + 'R') in paths:
+                right = '<R>R'
+            if (next_prefix + 'RM') in paths:
+                right = '<R>R'
+            f.write(f'{node.path} [label="{left}|{{<C>{node.key}|{nest}}}|{right}" style=filled fillcolor="{colors[node.nesting]}"];\n')
             prev = node.path
             dir = ''
             if prev.endswith('M'):
@@ -191,27 +211,25 @@ def graph_tree(filename: str, flat: list):
                 if prev != '' and not prev in paths:
                     prev += 'M'
                     assert prev in paths, f'path {prev} not found'
-            elif prev.endswith('N'):
-                prev = prev[:-1] + 'M'
-            if prev != '':
-                f.write(f'{prev} -> {node.path}')
-                # Show edge direction only if it is L (left) or R (right)
-                if dir == 'L' or dir == 'R':
-                    f.write(f' [label="{dir}"]')
-                f.write(';\n')
+            else:
+                dir = 'N'
+                if prev.endswith('N'):
+                    prev = prev[:-1] + 'M'
+            if prev == '':
+                f.write(f'root:N -> {node.path}:C;\n')
+            else:
+                f.write(f'{prev}:{dir} -> {node.path}:C;\n')
         f.write('}\n')
 
-# computes initial merkle hashes and writes resulting tree with intermediate
-# hashes into the file initial_hashes.txt
+# computes initial merkle hashes (sets root attributes of nodes)
 def initial_hash(flat: list):
-    with open("initial_hashes.txt", "w") as f:
-        empty, root = hash_subtree('', flat, f)
+    empty, root = hash_subtree('', flat)
     assert len(empty) == 0, f'unused tree nodes after computing root hash: {len(empty)}'
     return root
 
-def hash_subtree(path: str, nodes: list, f) -> (list, int):
+def hash_subtree(path: str, nodes: list) -> (list, int):
     from starkware.crypto.signature.fast_pedersen_hash import pedersen_hash
-    print(f'hash_subtree for {path}, nodes {len(nodes)}')
+    #print(f'hash_subtree for {path}, nodes {len(nodes)}')
     if len(nodes) == 0:
         return nodes, 0
     n = nodes[0]
@@ -222,26 +240,26 @@ def hash_subtree(path: str, nodes: list, f) -> (list, int):
     assert path <= node_path, f'incorrect ordering of nodes when computing root hash: {path} > {node_path}'
     if path == node_path:
         nodes = nodes[1:]
-    nodes, left_root = hash_subtree(path + 'L', nodes, f)
+    nodes, left_root = hash_subtree(path + 'L', nodes)
     nested = False
     if len(nodes) > 0 and nodes[0].path.endswith('M') and path==nodes[0].path[:-1]:
         #print(f'hash_subtree recurse N for {path}, nodepath {nodes[0].path}')
         nn = nodes[0]
-        nodes, nested_root = hash_subtree(path + 'N', nodes[1:], f)
+        nodes, nested_root = hash_subtree(path + 'N', nodes[1:])
         nested = True
         l_hash = pedersen_hash(left_root, nn.key)
     else:
         l_hash = pedersen_hash(left_root, n.key)
-    nodes, right_root = hash_subtree(path + 'R', nodes, f)
+    nodes, right_root = hash_subtree(path + 'R', nodes)
     if nested:
         r_hash = pedersen_hash(nested_root, right_root)
     else:
         r_hash = pedersen_hash(n.val, right_root)
     root = pedersen_hash(l_hash, r_hash)
     if nested:
-        f.write(f'{path}M {root} {" ".join([str(k) for k in nn.composite])}\n')
+        nn.root = root
     else:
-        f.write(f'{path} {root} {" ".join([str(k) for k in n.composite])} {n.val}\n')
+        n.root = root
     return nodes, root
 
 # Reads tree from the file produced by the initial_hash function
@@ -252,7 +270,7 @@ def read_from_file(filename: str) -> list:
     result = []
     for item_line in items:
         path = item_line[0]
-        hash = int(item_line[1])
+        root = int(item_line[1])
         if path.endswith('M'):
             # not expecting value at the end
             composite = [int(item) for item in item_line[2:]]
@@ -260,8 +278,18 @@ def read_from_file(filename: str) -> list:
             composite = [int(item) for item in item_line[2:-1]]
             val = int(item_line[-1])
         key = composite[-1]
-        result.append(AvlNode(key=key, composite=composite, height=0, nesting=len(composite)-1, path=path, tree=False, subtree=None, val=val))
+        result.append(AvlNode(key=key, composite=composite, height=0, nesting=len(composite)-1, path=path, tree=False, subtree=None, val=val, root=root))
     return result
+
+# Writes tree to file
+def write_to_file(nodes: list, filename: str) -> list:
+    with open(filename, "w") as f:
+        for n in nodes:
+            nested = n.path.endswith('M')
+            if nested:
+                f.write(f'{n.path} {n.root} {" ".join([str(k) for k in n.composite])}\n')
+            else:
+                f.write(f'{n.path} {n.root} {" ".join([str(k) for k in n.composite])} {n.val}\n')
 
 # randomly selects some nodes from the tree, and also generates some missing nodes
 def select_reads(nodes: list, exist_amount: int, miss_amount: int) -> list:
@@ -296,7 +324,9 @@ print_tree("", flat)
 root = initial_hash(flat=flat)
 print(f'initial root hash: {root}')
 
-flat = read_from_file('initial_hashes.txt')
+#flat = read_from_file('initial_hashes.txt')
+flat.sort(key=lambda n: n.path)
+write_to_file(nodes=flat, filename='sorted_hashes.txt')
 graph_tree('initial_graph', flat)
 import subprocess
 subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
