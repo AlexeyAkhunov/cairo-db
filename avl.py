@@ -268,6 +268,7 @@ def read_from_file(filename: str) -> list:
     for item_line in items:
         path = item_line[0]
         root = int(item_line[1])
+        val = 0
         if path.endswith('M'):
             # not expecting value at the end
             composite = [int(item) for item in item_line[2:]]
@@ -284,9 +285,9 @@ def write_to_file(nodes: list, filename: str) -> list:
         for n in nodes:
             nested = n.path.endswith('M')
             if nested:
-                f.write(f'{n.path} {n.root} {" ".join([str(k) for k in n.composite])}\n')
+                f.write(f'{n.path} 12345 {" ".join([str(k) for k in n.composite])}\n')
             else:
-                f.write(f'{n.path} {n.root} {" ".join([str(k) for k in n.composite])} {n.val}\n')
+                f.write(f'{n.path} 12345 {" ".join([str(k) for k in n.composite])} {n.val}\n')
 
 # randomly selects some nodes from the tree, and also generates some missing nodes
 def select_reads(nodes: list, exist_amount: int, miss_amount: int) -> list:
@@ -321,13 +322,17 @@ print_tree("", flat)
 root = initial_hash(flat=flat)
 print(f'initial root hash: {root}')
 
-#flat = read_from_file('initial_hashes.txt')
 flat.sort(key=lambda n: n.path)
 write_to_file(nodes=flat, filename='sorted_hashes.txt')
 graph_tree('initial_graph', flat)
 import subprocess
 subprocess.call(['dot', '-Tpng', 'initial_graph.dot', '-o', 'initial_graph.png'])
 
-reads = select_reads(nodes=flat, exist_amount=4, miss_amount=1)
-print(f'selected reads: {reads}')
+modified = read_from_file('modified_hashes.txt')
+graph_tree('modified_graph', modified)
+import subprocess
+subprocess.call(['dot', '-Tpng', 'modified_graph.dot', '-o', 'modified_graph.png'])
+
+#reads = select_reads(nodes=flat, exist_amount=4, miss_amount=1)
+#print(f'selected reads: {reads}')
 
